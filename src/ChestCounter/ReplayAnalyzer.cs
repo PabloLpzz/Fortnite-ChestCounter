@@ -1,4 +1,4 @@
-using System.Text.RegularExpressions;
+﻿using System.Text.RegularExpressions;
 using FortniteReplayReader;
 using FortniteReplayReader.Models;
 using FortniteReplayReader.Models.NetFieldExports;
@@ -211,7 +211,7 @@ public sealed class ReplayAnalyzer : FortniteReplayReader.ReplayReader
     private readonly List<GrantEvent> _grants = new();
 
     /// <summary>Bump when the analysis changes so that existing replays are re-analyzed.</summary>
-    public const int CurrentVersion = 16;
+    public const int CurrentVersion = 17;
 
     private static readonly bool ProbeDebug = Environment.GetEnvironmentVariable("CHESTCOUNTER_DEBUG") == "4";
 
@@ -800,7 +800,7 @@ public sealed class ReplayAnalyzer : FortniteReplayReader.ReplayReader
             {
                 foreach (var se in _searches.Where(x => x.Time >= ex.Value - 6 && x.Time <= ex.Value + 3).OrderBy(x => x.Time))
                 {
-                    Console.Error.WriteLine($"DBG nearhandler {se.Time,7:F1}s (Δ{se.Time - ex.Value:+0.0;-0.0}) {CleanName(se.Label)}{(se.Destroyed ? " DÉTRUIT" : "")} by {(se.SearcherPawn is uint sp ? NameOfPawn(sp) : "?")}{(se.SearcherPawn is uint tp2 && targetPawns.Contains(tp2) ? " (MOI)" : "")}");
+                    Console.Error.WriteLine($"DBG nearhandler {se.Time,7:F1}s (Î”{se.Time - ex.Value:+0.0;-0.0}) {CleanName(se.Label)}{(se.Destroyed ? " DÃ‰TRUIT" : "")} by {(se.SearcherPawn is uint sp ? NameOfPawn(sp) : "?")}{(se.SearcherPawn is uint tp2 && targetPawns.Contains(tp2) ? " (MOI)" : "")}");
                 }
             }
             foreach (var pz in _prizes)
@@ -813,7 +813,7 @@ public sealed class ReplayAnalyzer : FortniteReplayReader.ReplayReader
             }
             foreach (var i in interactions)
             {
-                Console.Error.WriteLine($"DBG interact {i.Time,7:F1}s {i.Kind} {i.Label}{(i.Destroyed ? " (DÉTRUIT)" : "")}");
+                Console.Error.WriteLine($"DBG interact {i.Time,7:F1}s {i.Kind} {i.Label}{(i.Destroyed ? " (DÃ‰TRUIT)" : "")}");
             }
         }
 
@@ -931,10 +931,16 @@ public sealed class ReplayAnalyzer : FortniteReplayReader.ReplayReader
             var nextHandler = hi + 1 < handlerTimes.Count ? handlerTimes[hi + 1] : float.MaxValue;
             // Buried chests grant the prize when the dig completes, ~2.5s before the chest reports "searched": allow
             // up to +4s for them only.
-            var closest = _searches
+            var nearby = _searches
                 .Where(x => x.Time >= h - 3 && (x.Time <= h + 2 || (x.Time <= h + 4 && ChestKinds.Classify(x.Label) == ChestKinds.Buried)))
                 .OrderBy(x => Math.Abs(x.Time - h))
-                .FirstOrDefault();
+                .ToList();
+            // Only the target's team can give the recording player a treasure, and only with a chest: an enemy's
+            // chest or an ammo box opened closer to that moment must not hide the chest that gave it.
+            bool OwnTeam(SearchEvent x) => x.SearcherPawn is uint p && (targetPawns.Contains(p) || teammatePawns.ContainsKey(p));
+            var closest = nearby.FirstOrDefault(x => OwnTeam(x) && ChestKinds.IsChest(ChestKinds.Classify(x.Label)))
+                ?? nearby.FirstOrDefault(OwnTeam)
+                ?? nearby.FirstOrDefault();
             var mine = closest != null && closest.SearcherPawn is uint cp && targetPawns.Contains(cp);
             var golden = finds.Concat(teamFinds).FirstOrDefault(f => f.FromGoldenChest && f.ObtainedAtSeconds is float g && Math.Abs(g - h) <= 5);
             if (Environment.GetEnvironmentVariable("CHESTCOUNTER_DEBUG") == "1")
@@ -1229,10 +1235,10 @@ public static class TreasureNames
     /// A treasure received with no way to tell which one (no golden chest in sight, no item seen): a gizmo or a major
     /// treasure. Saved as the French name, shown in the chosen language.
     /// </summary>
-    public const string UnknownFr = "Trésor (type inconnu)", UnknownEn = "Treasure (unknown type)", UnknownEs = "Tesoro (tipo desconocido)";
+    public const string UnknownFr = "TrÃ©sor (type inconnu)", UnknownEn = "Treasure (unknown type)", UnknownEs = "Tesoro (tipo desconocido)";
 
-    /// <summary>Name saved by versions before 1.5 for the same thing ("Gizmo de trésor"): shown as the new one.</summary>
-    private const string OldUnknownName = "Gizmo de trésor";
+    /// <summary>Name saved by versions before 1.5 for the same thing ("Gizmo de trÃ©sor"): shown as the new one.</summary>
+    private const string OldUnknownName = "Gizmo de trÃ©sor";
 
     public static string Canonical(string stored) => stored == OldUnknownName ? UnknownFr : stored;
     private const string OldUnknownPrefix = "Inconnu:";
@@ -1261,7 +1267,7 @@ public static class TreasureNames
         }
         if (Guid.TryParse(item, out _))
         {
-            return L.T("Récompense de coffre doré", "Golden chest reward", "Recompensa de cofre dorado") + $" ({item[..8]})";
+            return L.T("RÃ©compense de coffre dorÃ©", "Golden chest reward", "Recompensa de cofre dorado") + $" ({item[..8]})";
         }
         if (item.Contains(':'))
         {
@@ -1275,15 +1281,15 @@ public static class TreasureNames
                 return L.T(UnknownFr, UnknownEn, UnknownEs);
             }
             // A prize whose reward is not known yet: its id is shown, so that it can be named in a later version.
-            return L.T("Récompense de coffre doré", "Golden chest reward", "Recompensa de cofre dorado") + $" ({item[(item.IndexOf(':') + 1)..]})";
+            return L.T("RÃ©compense de coffre dorÃ©", "Golden chest reward", "Recompensa de cofre dorado") + $" ({item[(item.IndexOf(':') + 1)..]})";
         }
 
         var i = item.ToLowerInvariant();
-        if (i.Contains("flameceleb")) return "Feu d'artifice doré";
+        if (i.Contains("flameceleb")) return "Feu d'artifice dorÃ©";
         if (i.Contains("relicextractor")) return "Extracteur portable";
         if (i.Contains("relicfinder")) return "Localisateur d'esprit";
         if (i.Contains("luckylocator")) return "Localisateur chanceux";
-        if (i.Contains("smugglerextractionkey") || i.Contains("extractionaccelerat")) return "Accélérateur d'extraction";
+        if (i.Contains("smugglerextractionkey") || i.Contains("extractionaccelerat")) return "AccÃ©lÃ©rateur d'extraction";
         return item;
     }
 }
@@ -1293,14 +1299,14 @@ public static class ChestKinds
     // Chests (counted in the total)
     public const string Normal = "Coffre";
     public const string Rare = "Coffre rare";
-    public const string Buried = "Coffre enterré";
+    public const string Buried = "Coffre enterrÃ©";
     /// <summary>Rare sprite chest, behind the locked vault doors (needs a key): B_TieredChest_Relics_C and its variants.</summary>
     public const string Extraction = "Coffre d'esprit (rare)";
     public const string PosterChest = "Coffre des affiches d'esprit";
     public const string Other = "Autre coffre";
 
     // Other interactions (tracked separately, not in the chest total)
-    public const string Cannon = "Canon à butin";
+    public const string Cannon = "Canon Ã  butin";
     public const string AmmoBox = "Caisse de munitions";
     public const string FoodBox = "Caisse de nourriture";
     public const string OtherContainer = "Autre conteneur";
